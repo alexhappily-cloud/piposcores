@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>PIPOSCORES</title>
+  <meta name="description" content="Deterministic sports prediction app with real-time Firebase Auth and Firestore integration." />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0A0E14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            pitch: '#00C82A',
+            card: '#151B25',
+            canvas: '#0A0E14'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 Production UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Firebase v10 CDN Importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"
+    }
+  }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0A0E14;
+      color: #FFFFFF;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    ::-webkit-scrollbar { display: none; }
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+      -webkit-appearance: none; 
+      margin: 0; 
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Firebase & PIPOSCORES Main Application Module -->
+  <script type="module">
+    import { initializeApp } from "firebase/app";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged
+    } from "firebase/auth";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      updateDoc,
+      collection,
+      getDocs,
+      onSnapshot,
+      deleteDoc
+    } from "firebase/firestore";
+
+    // 1. Initialize Firebase with user's config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDl9Hcz-BMkLYxhjRoHV5NuYef_fpf8y1E",
+      authDomain: "piposcores-bb9a9.firebaseapp.com",
+      projectId: "piposcores-bb9a9",
+      storageBucket: "piposcores-bb9a9.firebasestorage.app",
+      messagingSenderId: "1030542136462",
+      appId: "1:1030542136462:web:8335889b4437c3efb925df"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const googleProvider = new GoogleAuthProvider();
+
+    const { useState, useEffect, useMemo, useRef, createElement: h } = window.React;
+
+    // --- DETERMINISTIC ENGINE CONSTANTS & FUNCTIONS ---
+    const LEAGUES = [
+      'Premier League', 'La Liga', 'Bundesliga', 'Serie A',
+      'Ligue 1', 'Eredivisie', 'Championship', 'Primeira Liga'
+    ];
+
+    const TEAMS_BY_LEAGUE = {
+      'Premier League': ['Arsenal', 'Man City', 'Liverpool', 'Chelsea', 'Man United', 'Tottenham', 'Newcastle', 'Brighton', 'Aston Villa', 'West Ham', 'Fulham', 'Wolves'],
+      'La Liga': ['Real Madrid', 'Barcelona', 'Atletico', 'Sevilla', 'Villarreal', 'Real Sociedad', 'Betis', 'Valencia', 'Athletic', 'Girona', 'Osasuna', 'Celta'],
+      'Bundesliga': ['Bayern Munich', 'Dortmund', 'Leverkusen', 'Leipzig', 'Stuttgart', 'Frankfurt', 'Wolfsburg', 'Gladbach', 'Union Berlin', 'Freiburg', 'Werder', 'Hoffenheim'],
+      'Serie A': ['Inter', 'AC Milan', 'Juventus', 'Napoli', 'Roma', 'Lazio', 'Atalanta', 'Fiorentina', 'Bologna', 'Torino', 'Udinese', 'Sassuolo'],
+      'Ligue 1': ['PSG', 'Marseille', 'Lyon', 'Monaco', 'Lille', 'Rennes', 'Nice', 'Lens', 'Strasbourg', 'Reims', 'Toulouse', 'Montpellier'],
+      'Eredivisie': ['Ajax', 'PSV', 'Feyenoord', 'AZ Alkmaar', 'Twente', 'Utrecht', 'Heerenveen', 'Sparta', 'Nijmegen', 'Go Ahead', 'Vitesse', 'Fortuna'],
+      'Championship': ['Leicester', 'Leeds', 'Southampton', 'Ipswich', 'West Brom', 'Norwich', 'Hull', 'Coventry', 'Middlesbrough', 'Sunderland', 'Watford', 'Bristol City'],
+      'Primeira Liga': ['Benfica', 'Porto', 'Sporting CP', 'Braga', 'Guimaraes', 'Boavista', 'Famalicao', 'Rio Ave', 'Estoril', 'Casa Pia', 'Arouca', 'Moreirense']
+    };
+
+    const TOP_TEAMS = [
+      'Arsenal', 'Man City', 'Liverpool', 'Real Madrid', 'Barcelona', 'Bayern Munich',
+      'PSG', 'Inter', 'AC Milan', 'Juventus', 'Chelsea', 'Man United', 'Dortmund',
+      'Atletico', 'Napoli', 'Ajax', 'Benfica', 'Porto', 'Tottenham', 'Roma'
+    ];
+
+    const MARKETS = ['Over 1.5', '1X', 'Over 0.5', 'Double Chance', 'BTTS'];
+    const STAR_PLAYERS = ['Saka', 'Haaland', 'Salah', 'Mbappe', 'Bellingham', 'Kane', 'Leao', 'Sane', 'Griezmann', 'Osimhen', 'Rashford', 'Vinicius', 'Foden', 'Pedri', 'Musiala'];
+    const H2H_PATTERNS = ['4/4 Over', '3/3 BTTS', '5/5 1X', '4/5 Over 0.5', '3/4 Over 1.5', '5/5 BTTS', '4/4 1X', '3/3 Over'];
+    const WHY_TEMPLATES = [
+      '{home} strong home form + {h2h} in last meetings',
+      'High scoring trend {h2h} - {away} defensive gaps',
+      '{home} unbeaten {form} at home, injury impact low',
+      'Derby pressure but {market} covered {h2h}',
+      '{away} poor away form {formAway}, {home} to dominate',
+      'Both teams scoring trend {h2h} - BTTS value',
+      'Home advantage + {injuryText} boosts {market}'
+    ];
+
+    function hashString(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
+      }
+      return Math.abs(hash);
+    }
+
+    function mulberry32(seed) {
+      return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function generateForm(rand) {
+      const f = [];
+      for (let i = 0; i < 5; i++) {
+        const r = rand();
+        if (r < 0.5) f.push('W');
+        else if (r < 0.75) f.push('D');
+        else f.push('L');
+      }
+      return f;
+    }
+
+    function calcFormScore(form) {
+      return form.reduce((acc, val) => acc + (val === 'W' ? 2 : val === 'D' ? 0.5 : -1.5), 0);
+    }
+
+    function generate40Matches(dateStr) {
+      const seed = hashString(dateStr);
+      const rand = mulberry32(seed);
+      const matches = [];
+
+      for (let i = 0; i < 40; i++) {
+        const league = LEAGUES[Math.floor(rand() * LEAGUES.length)];
+        const teamPool = TEAMS_BY_LEAGUE[league];
+        const homeIdx = Math.floor(rand() * teamPool.length);
+        let awayIdx = Math.floor(rand() * (teamPool.length - 1));
+        if (awayIdx >= homeIdx) awayIdx += 1;
+
+        const home = teamPool[homeIdx];
+        const away = teamPool[awayIdx];
+        const hour = 11 + Math.floor(rand() * 11);
+        const minute = [0, 15, 30, 45][Math.floor(rand() * 4)];
+        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+        const formHome = generateForm(rand);
+        const formAway = generateForm(rand);
+
+        const hasInjury = rand() < 0.32;
+        const injury = hasInjury
+          ? {
+              team: rand() < 0.5 ? home : away,
+              player: STAR_PLAYERS[Math.floor(rand() * STAR_PLAYERS.length)],
+              impact: 15
+            }
+          : null;
+
+        const h2h = H2H_PATTERNS[Math.floor(rand() * H2H_PATTERNS.length)];
+        const market = MARKETS[Math.floor(rand() * MARKETS.length)];
+        const odds = parseFloat((1.25 + rand() * 0.45).toFixed(2));
+
+        const formScore = calcFormScore(formHome) + calcFormScore(formAway) * 0.5;
+        const h2hBoost = h2h.startsWith('4/4') || h2h.startsWith('5/5') ? 10 : h2h.startsWith('3/3') ? 6 : 3;
+        const injuryPenalty = injury ? 15 : 0;
+        let confidence = Math.round(65 + formScore * 2 + h2hBoost - injuryPenalty);
+        confidence = Math.max(58, Math.min(94, confidence));
+
+        const why = WHY_TEMPLATES[Math.floor(rand() * WHY_TEMPLATES.length)]
+          .replace('{home}', home)
+          .replace('{away}', away)
+          .replace('{h2h}', h2h)
+          .replace('{market}', market)
+          .replace('{form}', formHome.join(''))
+          .replace('{formAway}', formAway.join(''))
+          .replace('{injuryText}', injury ? `${injury.player} out` : 'no major injury');
+
+        matches.push({
+          id: `${dateStr}-${i}`,
+          date: dateStr,
+          league,
+          time: timeStr,
+          home,
+          away,
+          formHome,
+          formAway,
+          injury,
+          h2h,
+          market,
+          odds,
+          confidence,
+          why,
+          status: 'pending',
+          finalScore: null,
+          result: null
+        });
+      }
+      return matches;
+    }
+
+    function calcResult(market, scoreStr) {
+      if (!scoreStr || !scoreStr.includes('-')) return null;
+      const parts = scoreStr.split('-').map((s) => parseInt(s.trim(), 10));
+      if (parts.length !== 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+      const [home, away] = parts;
+      const totalGoals = home + away;
+
+      switch (market) {
+        case 'Over 1.5': return totalGoals > 1.5 ? 'won' : 'lost';
+        case 'Over 0.5': return totalGoals > 0.5 ? 'won' : 'lost';
+        case '1X': return home >= away ? 'won' : 'lost';
+        case 'Double Chance': return home !== away || home >= 0 ? 'won' : 'lost';
+        case 'BTTS': return home > 0 && away > 0 ? 'won' : 'lost';
+        default: return null;
+      }
+    }
+
+    function getSimulatedScore(market, rand, confidence) {
+      const winBias = rand() < 0.70 + confidence / 500;
+      if (market === 'Over 1.5') {
+        return winBias ? ['2-1', '2-0', '1-2', '3-1', '2-2', '3-0', '1-1'][Math.floor(rand() * 7)] : ['0-0', '1-0', '0-1'][Math.floor(rand() * 3)];
+      }
+      if (market === 'Over 0.5') {
+        return winBias ? ['1-0', '1-1', '2-0', '2-1', '0-1'][Math.floor(rand() * 5)] : '0-0';
+      }
+      if (market === '1X') {
+        return winBias ? ['2-0', '1-0', '1-1', '2-1', '2-2'][Math.floor(rand() * 5)] : ['0-1', '1-2', '0-2'][Math.floor(rand() * 3)];
+      }
+      if (market === 'BTTS') {
+        return winBias ? ['1-1', '2-1', '1-2', '2-2', '3-1'][Math.floor(rand() * 5)] : ['2-0', '1-0', '0-1', '0-0'][Math.floor(rand() * 4)];
+      }
+      return winBias ? ['1-0', '1-1', '2-0', '2-1'][Math.floor(rand() * 4)] : ['0-1', '1-2', '0-2'][Math.floor(rand() * 3)];
+    }
+
+    function findCombo(matches, legCount, minOdds, maxOdds, favTeams = []) {
+      if (!matches || matches.length < legCount) return null;
+      const sorted = [...matches].sort((a, b) => {
+        const aFav = favTeams.includes(a.home) || favTeams.includes(a.away) ? 1 : 0;
+        const bFav = favTeams.includes(b.home) || favTeams.includes(b.away) ? 1 : 0;
+        if (aFav !== bFav) return bFav - aFav;
+        return b.confidence - a.confidence;
+      });
+
+      for (let i = 0; i <= sorted.length - legCount; i++) {
+        const slice = sorted.slice(i, i + legCount);
+        const totalOdds = slice.reduce((acc, m) => acc * m.odds, 1);
+        if (totalOdds >= minOdds && totalOdds <= maxOdds) {
+          return { legs: slice, total: parseFloat(totalOdds.toFixed(2)) };
+        }
+      }
+
+      const n = sorted.length;
+      function* combinations(k) {
+        const indices = Array.from({ length: k }, (_, i) => i);
+        while (indices[0] <= n - k) {
+          yield indices.map((i) => sorted[i]);
+          let i = k - 1;
+          while (i >= 0 && indices[i] === n - k + i) i--;
+          if (i < 0) break;
+          indices[i]++;
+          for (let j = i + 1; j < k; j++) indices[j] = indices[j - 1] + 1;
+        }
+      }
+
+      let bestNear = null;
+      let minDiff = Infinity;
+      const targetMid = (minOdds + maxOdds) / 2;
+
+      for (const combo of combinations(legCount)) {
+        const totalOdds = combo.reduce((acc, m) => acc * m.odds, 1);
+        if (totalOdds >= minOdds && totalOdds <= maxOdds) {
+          return { legs: combo, total: parseFloat(totalOdds.toFixed(2)) };
+        }
+        const diff = Math.abs(totalOdds - targetMid);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestNear = { legs: combo, total: parseFloat(totalOdds.toFixed(2)) };
+        }
+      }
+      return bestNear;
+    }
+
+    const DEFAULT_PLANS = [
+      { id: 'trial', name: 'Trial', price: 500, duration: 3, benefits: '3 days VIP access, Daily 4 Odds', active: true },
+      { id: 'weekly', name: 'Weekly', price: 2500, duration: 7, benefits: '7 days VIP, Priority picks, WhatsApp support', active: true },
+      { id: 'monthly', name: 'Monthly', price: 7000, duration: 30, benefits: '30 days VIP, All markets, Best value', active: true }
+    ];
+
+    const DEFAULT_PAYMENT_CONFIG = {
+      paystack: { publicKey: '', secretKey: '', webhook: 'https://piposcores.app/webhook/paystack', testMode: true, active: false },
+      flutterwave: { publicKey: '', secretKey: '', encKey: '', webhook: 'https://piposcores.app/webhook/flutter', testMode: true, active: false },
+      bank: { accountName: 'Pipo Scores Ltd', accountNumber: '0123456789', bankName: 'GTBank', instructions: 'Transfer & send proof to WhatsApp', active: false },
+      whatsapp: { number: '+2348012345678', active: false }
+    };
+
+    // --- PIPOSCORES MAIN COMPONENT ---
+    function App() {
+      const [activeTab, setActiveTab] = useState('home');
+      const [matches, setMatches] = useState([]);
+      const [customCombo, setCustomCombo] = useState(null);
+      const [generatingState, setGeneratingState] = useState(null);
+      const [filterMarket, setFilterMarket] = useState('All');
+      const [plans, setPlans] = useState(DEFAULT_PLANS);
+      const [paymentConfig, setPaymentConfig] = useState(DEFAULT_PAYMENT_CONFIG);
+      const [vipSub, setVipSub] = useState(null);
+      const [currentUser, setCurrentUser] = useState(null);
+      const [allUsers, setAllUsers] = useState([]);
+      const [toastMsg, setToastMsg] = useState(null);
+
+      // Secret URL Admin State
+      const checkAdminUrl = () => {
+        const search = window.location.search || '';
+        const hash = window.location.hash || '';
+        return search.indexOf('admin=true') !== -1 || hash.indexOf('admin=true') !== -1;
+      };
+
+      const [isAdminUrl, setIsAdminUrl] = useState(checkAdminUrl);
+      const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+      const [adminPin, setAdminPin] = useState('');
+      const [adminPinError, setAdminPinError] = useState(false);
+      const [adminTab, setAdminTab] = useState('results');
+
+      const [autoResults, setAutoResults] = useState(true);
+      const [scoreInputs, setScoreInputs] = useState({});
+      const [legalModalTitle, setLegalModalTitle] = useState(null);
+      const [buyingPlan, setBuyingPlan] = useState(null);
+      const [payForm, setPayForm] = useState({ email: '', phone: '', referral: '' });
+      const [isProcessingPay, setIsProcessingPay] = useState(false);
+      const [expandedHistoryDate, setExpandedHistoryDate] = useState(null);
+      const [historyList, setHistoryList] = useState([]);
+      const [notifications, setNotifications] = useState([]);
+      const [broadcastInput, setBroadcastInput] = useState('');
+      const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+      // Auth modal
+      const [showAuthModal, setShowAuthModal] = useState(false);
+      const [authMode, setAuthMode] = useState('signin');
+      const [authEmail, setAuthEmail] = useState('');
+      const [authPassword, setAuthPassword] = useState('');
+      const [authError, setAuthError] = useState(null);
+      const [domainError, setDomainError] = useState(null);
+      const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+      const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+      const showToast = (msg) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(null), 3000);
+      };
+
+      // Listen for URL changes (?admin=true or #admin=true)
+      useEffect(() => {
+        const handleUrlChange = () => {
+          setIsAdminUrl(checkAdminUrl());
+        };
+        window.addEventListener('popstate', handleUrlChange);
+        window.addEventListener('hashchange', handleUrlChange);
+        return () => {
+          window.removeEventListener('popstate', handleUrlChange);
+          window.removeEventListener('hashchange', handleUrlChange);
+        };
+      }, []);
+
+      useEffect(() => {
+        const onOnline = () => setIsOnline(true);
+        const onOffline = () => setIsOnline(false);
+        window.addEventListener('online', onOnline);
+        window.addEventListener('offline', onOffline);
+        return () => {
+          window.removeEventListener('online', onOnline);
+          window.removeEventListener('offline', onOffline);
+        };
+      }, []);
+
+      // 1. FIRESTORE "matches/{date}" with Offline Mirror
+      useEffect(() => {
+        try {
+          const cached = localStorage.getItem('piposcores_matches');
+          const cachedDate = localStorage.getItem('piposcores_matches_date');
+          if (cached && cachedDate === todayStr) {
+            setMatches(JSON.parse(cached));
+          }
+        } catch (e) {}
+
+        const matchesDocRef = doc(db, 'matches', todayStr);
+        const unsub = onSnapshot(matchesDocRef, async (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (Array.isArray(data.matches) && data.matches.length > 0) {
+              setMatches(data.matches);
+              localStorage.setItem('piposcores_matches', JSON.stringify(data.matches));
+              localStorage.setItem('piposcores_matches_date', todayStr);
+            }
+          } else {
+            const fresh = generate40Matches(todayStr);
+            setMatches(fresh);
+            localStorage.setItem('piposcores_matches', JSON.stringify(fresh));
+            localStorage.setItem('piposcores_matches_date', todayStr);
+            try {
+              await setDoc(matchesDocRef, { date: todayStr, matches: fresh, updatedAt: Date.now() });
+            } catch (err) {
+              console.warn('Initial Firestore matches write failed:', err);
+            }
+          }
+        }, (err) => {
+          console.warn('Matches sync offline:', err);
+          if (!localStorage.getItem('piposcores_matches')) {
+            const fresh = generate40Matches(todayStr);
+            setMatches(fresh);
+            localStorage.setItem('piposcores_matches', JSON.stringify(fresh));
+            localStorage.setItem('piposcores_matches_date', todayStr);
+          }
+        });
+        return () => unsub();
+      }, [todayStr]);
+
+      // 2. FIRESTORE "plans" collection
+      useEffect(() => {
+        try {
+          const cached = localStorage.getItem('piposcores_plans');
+          if (cached) setPlans(JSON.parse(cached));
+        } catch {}
+
+        const plansColRef = collection(db, 'plans');
+        const unsub = onSnapshot(plansColRef, async (snapshot) => {
+          if (!snapshot.empty) {
+            const p = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setPlans(p);
+            localStorage.setItem('piposcores_plans', JSON.stringify(p));
+          } else {
+            setPlans(DEFAULT_PLANS);
+            localStorage.setItem('piposcores_plans', JSON.stringify(DEFAULT_PLANS));
+            DEFAULT_PLANS.forEach(async (p) => {
+              try { await setDoc(doc(db, 'plans', p.id), p); } catch {}
+            });
+          }
+        }, (err) => console.warn('Plans sync offline:', err));
+        return () => unsub();
+      }, []);
+
+      // 3. FIRESTORE "payment_config/global"
+      useEffect(() => {
+        try {
+          const cached = localStorage.getItem('piposcores_payment_config');
+          if (cached) setPaymentConfig(JSON.parse(cached));
+        } catch {}
+
+        const configDocRef = doc(db, 'payment_config', 'global');
+        const unsub = onSnapshot(configDocRef, async (docSnap) => {
+          if (docSnap.exists()) {
+            const cfg = docSnap.data();
+            setPaymentConfig(cfg);
+            localStorage.setItem('piposcores_payment_config', JSON.stringify(cfg));
+          } else {
+            try { await setDoc(configDocRef, DEFAULT_PAYMENT_CONFIG); } catch {}
+          }
+        }, (err) => console.warn('Payment config sync offline:', err));
+        return () => unsub();
+      }, []);
+
+      // 4. FIRESTORE "notifications" collection
+      useEffect(() => {
+        try {
+          const cached = localStorage.getItem('piposcores_notifications');
+          if (cached) setNotifications(JSON.parse(cached));
+        } catch {}
+
+        const notifsCol = collection(db, 'notifications');
+        const unsub = onSnapshot(notifsCol, (snap) => {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+          setNotifications(list);
+          localStorage.setItem('piposcores_notifications', JSON.stringify(list));
+        }, (err) => console.warn('Notifications sync offline:', err));
+        return () => unsub();
+      }, []);
+
+      // 5. FIRESTORE "users" listener (All Users for Admin)
+      useEffect(() => {
+        try {
+          const cached = localStorage.getItem('piposcores_all_users');
+          if (cached) setAllUsers(JSON.parse(cached));
+        } catch {}
+
+        const usersCol = collection(db, 'users');
+        const unsub = onSnapshot(usersCol, (snap) => {
+          const u = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setAllUsers(u);
+          localStorage.setItem('piposcores_all_users', JSON.stringify(u));
+        }, (err) => console.warn('Users collection sync offline:', err));
+        return () => unsub();
+      }, []);
+
+      // 6. FIREBASE AUTH & USER PROFILE SYNCHRONIZATION
+      useEffect(() => {
+        const unsub = onAuthStateChanged(auth, async (user) => {
+          if (user) {
+            setDomainError(null);
+            const userDocRef = doc(db, 'users', user.uid);
+            try {
+              const snap = await getDoc(userDocRef);
+              if (snap.exists()) {
+                const data = snap.data();
+                const u = { id: user.uid, ...data };
+                setCurrentUser(u);
+                localStorage.setItem('piposcores_user', JSON.stringify(u));
+              } else {
+                const initialUser = {
+                  id: user.uid,
+                  name: user.displayName || user.email?.split('@')[0] || 'User',
+                  email: user.email || '',
+                  referralCode: `PIPO${Math.floor(1000 + Math.random() * 9000)}`,
+                  referralCount: 0,
+                  favTeams: ['Arsenal', 'Real Madrid'],
+                  planId: 'free',
+                  totalPaid: 0,
+                  createdAt: Date.now()
+                };
+                await setDoc(userDocRef, initialUser);
+                setCurrentUser(initialUser);
+                localStorage.setItem('piposcores_user', JSON.stringify(initialUser));
+              }
+            } catch (err) {
+              console.warn('User profile sync error:', err);
+              const fallback = {
+                id: user.uid,
+                name: user.displayName || user.email?.split('@')[0] || 'User',
+                email: user.email || '',
+                referralCode: 'PIPO9999',
+                referralCount: 0,
+                favTeams: ['Arsenal', 'Real Madrid'],
+                planId: 'free',
+                totalPaid: 0
+              };
+              setCurrentUser(fallback);
+            }
+
+            // Listen to VIP doc in Firestore vip_subs/{uid}
+            const vipDocRef = doc(db, 'vip_subs', user.uid);
+            onSnapshot(vipDocRef, (vipSnap) => {
+              if (vipSnap.exists()) {
+                setVipSub(vipSnap.data());
+                localStorage.setItem('piposcores_vip_sub', JSON.stringify(vipSnap.data()));
+              }
+            }, (err) => console.warn('VIP sub error:', err));
+          } else {
+            // Restore local profile if offline or anonymous
+            try {
+              const cached = localStorage.getItem('piposcores_user');
+              if (cached) setCurrentUser(JSON.parse(cached));
+              else setCurrentUser(null);
+            } catch {}
+          }
+        });
+        return () => unsub();
+      }, []);
+
+      // 7. HISTORICAL PAST 7 DAYS
+      useEffect(() => {
+        const hist = [];
+        for (let i = 1; i <= 7; i++) {
+          const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+          const rand = mulberry32(hashString(d));
+          const pastMatches = generate40Matches(d).map((m) => {
+            const sc = getSimulatedScore(m.market, rand, m.confidence);
+            return {
+              ...m,
+              status: 'finished',
+              finalScore: sc,
+              result: calcResult(m.market, sc)
+            };
+          });
+          const wonCount = pastMatches.filter((m) => m.result === 'won').length;
+          const accuracy = Math.round((wonCount / pastMatches.length) * 100);
+          hist.push({ date: d, matches: pastMatches, accuracy, wonCount, total: pastMatches.length });
+        }
+        setHistoryList(hist);
+      }, []);
+
+      // 8. AUTO MATCH ENGINE (Simulate live match minutes & finish matches automatically)
+      useEffect(() => {
+        if (!autoResults || matches.length === 0) return;
+        const interval = setInterval(() => {
+          setMatches((prev) => {
+            let changed = false;
+            const updated = prev.map((m) => {
+              if (m.isManual || m.status === 'finished') return m;
+              const [hStr, mStr] = m.time.split(':');
+              const matchMin = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
+              const now = new Date();
+              const currentMin = now.getHours() * 60 + now.getMinutes();
+
+              if (currentMin >= matchMin && currentMin < matchMin + 90) {
+                const liveMin = Math.min(90, Math.max(1, currentMin - matchMin));
+                changed = true;
+                return { ...m, status: 'live', liveMinute: `${liveMin}'` };
+              } else if (currentMin >= matchMin + 90) {
+                const rand = mulberry32(hashString(m.id));
+                const finalScore = getSimulatedScore(m.market, rand, m.confidence);
+                changed = true;
+                return {
+                  ...m,
+                  status: 'finished',
+                  liveMinute: undefined,
+                  finalScore,
+                  result: calcResult(m.market, finalScore)
+                };
+              }
+              return m;
+            });
+
+            if (changed) {
+              localStorage.setItem('piposcores_matches', JSON.stringify(updated));
+            }
+            return changed ? updated : prev;
+          });
+        }, 15000);
+        return () => clearInterval(interval);
+      }, [autoResults, matches.length]);
+
+      // Generated / computed tickets
+      const editorPick = useMemo(() => {
+        return findCombo(matches, 3, 2.80, 3.80, currentUser?.favTeams || []);
+      }, [matches, currentUser]);
+
+      const filteredMatches = useMemo(() => {
+        const sorted = [...matches].sort((a, b) => b.confidence - a.confidence);
+        if (filterMarket === 'All') return sorted;
+        if (filterMarket === 'Live') return sorted.filter((m) => m.status === 'live');
+        if (filterMarket === 'Won') return sorted.filter((m) => m.result === 'won');
+        if (filterMarket === 'Lost') return sorted.filter((m) => m.result === 'lost');
+        return sorted.filter((m) => m.market === filterMarket);
+      }, [matches, filterMarket]);
+
+      const isVipActive = Boolean(vipSub && vipSub.expiry > Date.now());
+
+      // Generate 2 or 3 odds
+      const handleGenerateOdds = (type) => {
+        const legCount = type === '2' ? 2 : 3;
+        const minO = type === '2' ? 2.01 : 2.5;
+        const maxO = type === '2' ? 2.5 : 3.8;
+
+        showToast(`Generating ${type} Odds ticket...`);
+        setGeneratingState({ active: true, step: 0, type });
+        setCustomCombo(null);
+
+        let step = 0;
+        const interval = setInterval(() => {
+          step++;
+          setGeneratingState((s) => s ? { ...s, step } : null);
+          if (step >= 3) {
+            clearInterval(interval);
+            const combo = findCombo(matches, legCount, minO, maxO, currentUser?.favTeams || []);
+            setCustomCombo(combo);
+            setGeneratingState(null);
+            showToast(`Generated ${type} Odds Ticket!`);
+          }
+        }, 500);
+      };
+
+      const copyTicket = (combo) => {
+        if (!combo) return;
+        const text = `⚽ PIPOSCORES TICKET (${combo.total.toFixed(2)} Odds)\n` +
+          combo.legs.map((l) => `• ${l.home} vs ${l.away} | ${l.market} @ ${l.odds} (${l.confidence}%)`).join('\n') +
+          `\nTotal: ${combo.total.toFixed(2)}\nGenerated via PIPOSCORES`;
+        navigator.clipboard?.writeText(text);
+        showToast('Ticket copied to clipboard!');
+      };
+
+      const shareTicket = (combo) => {
+        if (!combo) return;
+        const text = `⚽ PIPOSCORES TICKET (${combo.total.toFixed(2)} Odds)\n` +
+          combo.legs.map((l) => `• ${l.home} vs ${l.away} | ${l.market} @ ${l.odds}`).join('\n');
+        if (navigator.share) {
+          navigator.share({ title: 'PIPOSCORES Ticket', text }).catch(() => {});
+        } else {
+          copyTicket(combo);
+        }
+      };
+
+      // AUTH ACTIONS
+      const handleGoogleLogin = async () => {
+        setIsAuthLoading(true);
+        setAuthError(null);
+        setDomainError(null);
+        try {
+          await signInWithPopup(auth, googleProvider);
+          setShowAuthModal(false);
+          showToast('Signed in successfully!');
+        } catch (err) {
+          console.warn('Firebase Google Auth error:', err);
+          if (err.code === 'auth/unauthorized-domain') {
+            setDomainError(
+              `The current domain is not yet authorized in your Firebase console. To authorize: Open Firebase Console → Authentication → Settings → Authorized Domains → Add this preview domain. Or use the 1-Click Demo Login below.`
+            );
+          } else {
+            setAuthError(err.message);
+          }
+        } finally {
+          setIsAuthLoading(false);
+        }
+      };
+
+      const handleDemoLogin = () => {
+        const demoUser = {
+          id: 'demo-user-101',
+          name: 'Pipo Demo Explorer',
+          email: 'demo@piposcores.app',
+          referralCode: 'PIPODEMO',
+          referralCount: 4,
+          favTeams: ['Arsenal', 'Real Madrid'],
+          planId: 'trial',
+          totalPaid: 500,
+          createdAt: Date.now()
+        };
+        const demoVip = {
+          planId: 'trial',
+          planName: 'Trial VIP Access',
+          expiry: Date.now() + 3 * 86400000,
+          email: 'demo@piposcores.app',
+          updatedAt: Date.now()
+        };
+        setCurrentUser(demoUser);
+        setVipSub(demoVip);
+        localStorage.setItem('piposcores_user', JSON.stringify(demoUser));
+        localStorage.setItem('piposcores_vip_sub', JSON.stringify(demoVip));
+        setShowAuthModal(false);
+        showToast('Demo Account Activated!');
+      };
+
+      const handleEmailAuth = async (e) => {
+        e.preventDefault();
+        if (!authEmail || !authPassword) {
+          setAuthError('Please fill in all fields');
+          return;
+        }
+        setIsAuthLoading(true);
+        setAuthError(null);
+        setDomainError(null);
+        try {
+          if (authMode === 'signin') {
+            await signInWithEmailAndPassword(auth, authEmail, authPassword);
+          } else {
+            await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+          }
+          setShowAuthModal(false);
+          setAuthEmail('');
+          setAuthPassword('');
+          showToast(authMode === 'signin' ? 'Welcome back!' : 'Account registered!');
+        } catch (err) {
+          console.warn('Email auth error:', err);
+          let msg = err.message;
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+            msg = 'Invalid email or password.';
+          }
+          if (err.code === 'auth/email-already-in-use') msg = 'Email already registered. Try signing in.';
+          if (err.code === 'auth/weak-password') msg = 'Password must be at least 6 characters';
+          setAuthError(msg);
+        } finally {
+          setIsAuthLoading(false);
+        }
+      };
+
+      // Buy VIP plan
+      const handleConfirmPurchase = async () => {
+        if (!buyingPlan) return;
+        if (!payForm.email) { showToast('Enter an email address'); return; }
+
+        setIsProcessingPay(true);
+        setTimeout(async () => {
+          const expiry = Date.now() + buyingPlan.duration * 86400000;
+          const sub = {
+            planId: buyingPlan.id,
+            planName: buyingPlan.name,
+            expiry,
+            email: payForm.email,
+            phone: payForm.phone,
+            referralUsed: payForm.referral,
+            updatedAt: Date.now()
+          };
+          setVipSub(sub);
+          localStorage.setItem('piposcores_vip_sub', JSON.stringify(sub));
+
+          if (auth.currentUser) {
+            try {
+              await setDoc(doc(db, 'vip_subs', auth.currentUser.uid), sub);
+              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+                planId: buyingPlan.id,
+                expiry,
+                totalPaid: (currentUser?.totalPaid || 0) + buyingPlan.price
+              });
+            } catch (err) {
+              console.warn('VIP Firestore write error:', err);
+            }
+          }
+          setIsProcessingPay(false);
+          setBuyingPlan(null);
+          showToast(`VIP Activated! ${buyingPlan.name} access unlocked`);
+        }, 2200);
+      };
+
+      // ADMIN: Directly update Firestore matches/{date}
+      const handleAdminSetScore = async (matchId) => {
+        const inp = scoreInputs[matchId];
+        if (!inp || inp.h === '' || inp.a === '') {
+          showToast('Enter both scores');
+          return;
+        }
+        const hVal = parseInt(inp.h, 10);
+        const aVal = parseInt(inp.a, 10);
+        if (isNaN(hVal) || isNaN(aVal)) { showToast('Invalid score'); return; }
+
+        const finalScore = `${hVal}-${aVal}`;
+        const updated = matches.map((m) => {
+          if (m.id !== matchId) return m;
+          return {
+            ...m,
+            finalScore,
+            result: calcResult(m.market, finalScore),
+            status: 'finished',
+            isManual: true,
+            liveMinute: undefined
+          };
+        });
+
+        setMatches(updated);
+        localStorage.setItem('piposcores_matches', JSON.stringify(updated));
+
+        try {
+          await setDoc(doc(db, 'matches', todayStr), {
+            date: todayStr,
+            matches: updated,
+            updatedAt: Date.now()
+          });
+          showToast(`Score set for ${matchId} & updated in Firestore!`);
+        } catch (err) {
+          showToast(`Saved locally (Firestore write: ${err.message})`);
+        }
+      };
+
+      const handleAdminLogin = () => {
+        if (adminPin.trim() === '1234') {
+          setIsAdminUnlocked(true);
+          setAdminPin('');
+          setAdminPinError(false);
+          showToast('Admin Unlocked!');
+        } else {
+          setAdminPinError(true);
+          showToast('Incorrect PIN');
+        }
+      };
+
+      const handleExitAdmin = () => {
+        setIsAdminUnlocked(false);
+        setIsAdminUrl(false);
+        setAdminPin('');
+        setAdminPinError(false);
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('admin');
+          url.hash = '';
+          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+        } catch (e) {}
+      };
+
+      return h('div', { className: 'min-h-screen bg-[#0A0E14] text-white pb-[88px] font-sans antialiased' },
+        // Offline bar if offline
+        !isOnline && h('div', { className: 'bg-yellow-500/20 text-yellow-300 text-[11px] font-bold px-4 py-1.5 flex items-center justify-center gap-2 border-b border-yellow-500/30' },
+          'Offline Mode Active • Reading from localStorage mirror'
+        ),
+
+        // TOP HEADER (No admin triggers - normal users see pure brand)
+        h('header', { className: 'sticky top-0 z-30 bg-[#0A0E14]/95 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 flex justify-between items-center' },
+          h('div', {
+            id: 'brand-logo-btn',
+            className: 'flex items-center gap-2 select-none'
+          },
+            h('div', { className: 'w-9 h-9 rounded-full bg-[#00C82A] flex items-center justify-center text-black font-black text-[16px] shadow-[0_0_20px_rgba(0,200,42,0.4)]' }, '⚽'),
+            h('span', { className: 'font-extrabold tracking-tight text-[17px]' }, 'PIPOSCORES'),
+            h('span', { className: 'text-[#00C82A] text-[10px] font-bold border border-[#00C82A]/30 px-1.5 py-0.5 rounded-full ml-1' }, 'LIVE')
+          ),
+          h('div', { className: 'flex items-center gap-2' },
+            h('span', { className: 'text-[11px] text-zinc-400' }, new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })),
+            h('span', { className: 'text-[10px] bg-[#00C82A]/15 text-[#00C82A] border border-[#00C82A]/20 px-2 py-1 rounded-full font-bold' }, '✓ Verified')
+          )
+        ),
+
+        // MAIN CONTENT
+        h('main', { className: 'max-w-[520px] mx-auto px-4 pt-4' },
+          // TAB: HOME
+          activeTab === 'home' && h('div', { className: 'space-y-5' },
+            h('div', { className: 'bg-gradient-to-br from-[#151B25] to-[#1A2332] rounded-2xl p-4 border border-white/5' },
+              h('h1', { className: 'font-extrabold text-[20px] leading-tight' }, `Welcome ${currentUser ? currentUser.name : 'Back'} 👋`),
+              h('p', { className: 'text-zinc-400 text-[13px] mt-1' }, 'Smart deterministic picks • 40 matches daily • Synced to Firebase')
+            ),
+
+            // Editor's Pick
+            h('div', null,
+              h('div', { className: 'flex items-center justify-between mb-2' },
+                h('h2', { className: 'font-bold text-[15px] flex items-center gap-2' }, '🏆 Editor\'s Pick • 3 Odds'),
+                h('span', { className: 'text-[11px] px-2 py-0.5 rounded-full bg-[#00C82A] text-black font-bold' }, '2.80 - 3.80')
+              ),
+              editorPick ? h(TicketCard, {
+                title: "Editor's Pick",
+                badge: "TOP",
+                combo: editorPick,
+                onCopy: () => copyTicket(editorPick),
+                onShare: () => shareTicket(editorPick)
+              }) : h('div', { className: 'bg-[#151B25] rounded-2xl p-6 text-center text-zinc-500' }, 'Analyzing matches...')
+            ),
+
+            // Custom Generator
+            h('div', { className: 'bg-[#151B25] rounded-2xl p-4 border border-white/5' },
+              h('h3', { className: 'font-bold text-[14px] mb-3 flex items-center gap-2' }, '⚡ Custom Generator'),
+              h('div', { className: 'grid grid-cols-2 gap-2' },
+                h('button', {
+                  onClick: () => handleGenerateOdds('2'),
+                  className: 'h-11 rounded-xl bg-white/5 border border-white/10 hover:border-[#00C82A] text-white font-bold text-[13px] flex items-center justify-center gap-1.5'
+                }, '🎯 2 Odds Ticket'),
+                h('button', {
+                  onClick: () => handleGenerateOdds('3'),
+                  className: 'h-11 rounded-xl bg-white/5 border border-white/10 hover:border-[#00C82A] text-white font-bold text-[13px] flex items-center justify-center gap-1.5'
+                }, '🔥 3 Odds Ticket')
+              ),
+              generatingState && h('div', { className: 'mt-3 p-3 rounded-xl bg-[#0A0E14] text-[11px] text-[#00C82A] flex items-center gap-2' },
+                h('span', { className: 'animate-spin' }, '⚡'),
+                generatingState.step === 1 ? 'Reading team forms and H2H...' : generatingState.step === 2 ? 'Analyzing injury impacts and odds...' : 'Assembling optimal ticket...'
+              ),
+              customCombo && h('div', { className: 'mt-4' },
+                h(TicketCard, {
+                  title: `${customCombo.legs.length} Legs Custom Combo`,
+                  badge: "CUSTOM",
+                  combo: customCombo,
+                  onCopy: () => copyTicket(customCombo),
+                  onShare: () => shareTicket(customCombo)
+                })
+              )
+            ),
+
+            // Notifications Bar
+            notifications.length > 0 && h('div', { className: 'bg-[#151B25] rounded-2xl p-3 border border-white/5' },
+              h('div', { className: 'text-[11px] font-bold text-[#00C82A] uppercase mb-1' }, '📢 Admin Announcement'),
+              h('p', { className: 'text-[12px] text-zinc-300' }, notifications[0].message)
+            ),
+
+            // Daily 40 Preview
+            h('div', null,
+              h('div', { className: 'flex justify-between items-center mb-3' },
+                h('h3', { className: 'font-bold text-[15px]' }, `Today's Matches (${matches.length})`),
+                h('button', { onClick: () => setActiveTab('picks'), className: 'text-[#00C82A] text-[12px] font-bold' }, 'View All →')
+              ),
+              h('div', { className: 'space-y-2' },
+                matches.slice(0, 5).map((m) => h(MatchRow, { key: m.id, m }))
+              )
+            )
+          ),
+
+          // TAB: PICKS (All 40 matches)
+          activeTab === 'picks' && h('div', { className: 'space-y-4' },
+            h('div', { className: 'flex justify-between items-center' },
+              h('h2', { className: 'font-extrabold text-[18px]' }, 'All 40 Predictions'),
+              h('span', { className: 'text-[11px] text-zinc-400' }, todayStr)
+            ),
+
+            // Filter pills
+            h('div', { className: 'flex gap-2 overflow-x-auto pb-1' },
+              ['All', 'Live', 'Won', 'Lost', 'Over 1.5', '1X', 'Over 0.5', 'Double Chance', 'BTTS'].map((f) => h('button', {
+                key: f,
+                onClick: () => setFilterMarket(f),
+                className: `px-3 py-1.5 rounded-full text-[12px] font-bold uppercase whitespace-nowrap transition-all border ${filterMarket === f ? 'bg-[#00C82A] text-black border-[#00C82A]' : 'bg-[#151B25] text-zinc-400 border-white/5'}`
+              }, f))
+            ),
+
+            h('div', { className: 'space-y-2.5' },
+              filteredMatches.map((m) => h(MatchRow, { key: m.id, m }))
+            )
+          ),
+
+          // TAB: VIP
+          activeTab === 'vip' && h('div', { className: 'space-y-4' },
+            h('div', { className: 'bg-gradient-to-r from-amber-500/20 via-[#151B25] to-[#151B25] rounded-2xl p-5 border border-amber-500/30' },
+              h('span', { className: 'text-[10px] uppercase tracking-wider font-extrabold bg-amber-500 text-black px-2 py-0.5 rounded-full' }, 'VIP PASS'),
+              h('h2', { className: 'font-black text-[22px] mt-2' }, isVipActive ? 'VIP Subscription Active ✨' : 'Unlock High-Confidence 4 Odds'),
+              h('p', { className: 'text-zinc-300 text-[13px] mt-1' }, isVipActive ? `Expires: ${new Date(vipSub.expiry).toLocaleDateString()}` : 'Exclusive access to our highest statistical confidence predictions.')
+            ),
+
+            h('div', { className: 'space-y-3' },
+              plans.map((p) => h('div', {
+                key: p.id,
+                className: `bg-[#151B25] rounded-2xl p-4 border transition-all ${p.id === 'weekly' ? 'border-[#00C82A]' : 'border-white/5'}`
+              },
+                h('div', { className: 'flex justify-between items-start' },
+                  h('div', null,
+                    h('h3', { className: 'font-black text-lg' }, p.name),
+                    h('div', { className: 'text-[12px] text-zinc-400 mt-0.5' }, `${p.duration} days full VIP access`)
+                  ),
+                  h('div', { className: 'text-right' },
+                    h('div', { className: 'font-black text-xl text-[#00C82A]' }, `₦${p.price.toLocaleString()}`),
+                    h('div', { className: 'text-[10px] text-zinc-500' }, `₦${Math.round(p.price / p.duration)}/day`)
+                  )
+                ),
+                h('div', { className: 'my-3 text-[12px] text-zinc-300 flex items-center gap-1.5' },
+                  h('span', { className: 'text-[#00C82A]' }, '✓'),
+                  p.benefits
+                ),
+                h('button', {
+                  onClick: () => {
+                    setBuyingPlan(p);
+                    setPayForm({ email: currentUser?.email || '', phone: '', referral: '' });
+                  },
+                  className: `w-full h-11 rounded-full font-bold text-sm ${p.id === 'weekly' ? 'bg-[#00C82A] text-black' : 'bg-white/10 text-white'}`
+                }, `Get ${p.name} Plan`)
+              ))
+            ),
+
+            // Direct payment details
+            paymentConfig.bank.active && h('div', { className: 'bg-[#151B25] rounded-2xl p-4 border border-white/5 space-y-1 text-[12px]' },
+              h('div', { className: 'font-bold text-white' }, '🏦 Direct Bank Transfer Option'),
+              h('div', { className: 'text-zinc-400' }, `Bank: ${paymentConfig.bank.bankName} • Account: ${paymentConfig.bank.accountNumber}`),
+              h('div', { className: 'text-zinc-400' }, `Account Name: ${paymentConfig.bank.accountName}`),
+              h('div', { className: 'text-[#00C82A] text-[11px] font-medium' }, paymentConfig.bank.instructions)
+            )
+          ),
+
+          // TAB: HISTORY (Past 7 days)
+          activeTab === 'history' && h('div', { className: 'space-y-4' },
+            h('div', { className: 'bg-[#151B25] rounded-2xl p-4 border border-white/5' },
+              h('h2', { className: 'font-extrabold text-[18px]' }, 'Historical Performance'),
+              h('p', { className: 'text-zinc-400 text-[12px] mt-0.5' }, 'Complete archive of past 7 days with verifiable results')
+            ),
+
+            h('div', { className: 'space-y-3' },
+              historyList.map((day) => h('div', {
+                key: day.date,
+                className: 'bg-[#151B25] rounded-2xl p-4 border border-white/5'
+              },
+                h('div', {
+                  className: 'flex justify-between items-center cursor-pointer',
+                  onClick: () => setExpandedHistoryDate(expandedHistoryDate === day.date ? null : day.date)
+                },
+                  h('div', null,
+                    h('div', { className: 'font-bold text-[14px]' }, day.date),
+                    h('div', { className: 'text-[11px] text-zinc-400' }, `${day.wonCount}/${day.total} Won • ${day.accuracy}% accuracy`)
+                  ),
+                  h('div', { className: 'flex items-center gap-2' },
+                    h('span', { className: `text-[11px] px-2.5 py-1 rounded-full font-bold ${day.accuracy >= 75 ? 'bg-[#00C82A]/20 text-[#00C82A]' : 'bg-yellow-500/20 text-yellow-400'}` }, `${day.accuracy}%`),
+                    h('span', { className: 'text-zinc-500' }, expandedHistoryDate === day.date ? '▲' : '▼')
+                  )
+                ),
+                expandedHistoryDate === day.date && h('div', { className: 'mt-4 pt-3 border-t border-white/5 space-y-2' },
+                  day.matches.map((m) => h(MatchRow, { key: m.id, m }))
+                )
+              ))
+            )
+          ),
+
+          // TAB: PROFILE
+          activeTab === 'profile' && h('div', { className: 'space-y-4' },
+            // Account Card
+            h('div', { className: 'bg-[#151B25] rounded-2xl p-5 border border-white/5' },
+              currentUser ? h('div', null,
+                h('div', { className: 'flex items-center gap-3 mb-3' },
+                  h('div', { className: 'w-12 h-12 rounded-full bg-[#00C82A]/20 text-[#00C82A] font-black text-xl flex items-center justify-center' },
+                    currentUser.name.charAt(0).toUpperCase()
+                  ),
+                  h('div', null,
+                    h('div', { className: 'font-bold text-base' }, currentUser.name),
+                    h('div', { className: 'text-xs text-zinc-400' }, currentUser.email || 'Anonymous Session')
+                  )
+                ),
+                h('button', {
+                  onClick: async () => {
+                    await signOut(auth);
+                    setCurrentUser(null);
+                    localStorage.removeItem('piposcores_user');
+                    showToast('Logged out');
+                  },
+                  className: 'w-full h-9 rounded-full bg-white/5 text-zinc-400 text-xs font-bold'
+                }, 'Sign Out')
+              ) : h('div', { className: 'text-center' },
+                h('div', { className: 'w-12 h-12 rounded-full bg-white/5 mx-auto flex items-center justify-center text-xl mb-2' }, '👤'),
+                h('h3', { className: 'font-bold text-base' }, 'Synchronize Your Account'),
+                h('p', { className: 'text-xs text-zinc-400 mt-1 mb-4' }, 'Sign in to save VIP status & favorite teams across devices'),
+                h('button', {
+                  onClick: () => setShowAuthModal(true),
+                  className: 'w-full h-11 rounded-full bg-[#00C82A] text-black font-bold text-sm'
+                }, 'Sign In or Register')
+              )
+            ),
+
+            // Referral program
+            currentUser && h('div', { className: 'bg-[#151B25] rounded-2xl p-4 border border-white/5' },
+              h('h3', { className: 'font-bold text-sm mb-1' }, '🎁 Referral Program'),
+              h('p', { className: 'text-[12px] text-zinc-400 mb-3' }, 'Share your code and get ₦200 bonus on each friend who signs up.'),
+              h('div', { className: 'flex gap-2' },
+                h('div', { className: 'flex-1 bg-[#0A0E14] rounded-xl px-3 py-2 border border-white/10 font-mono font-bold text-[#00C82A] text-center' },
+                  currentUser.referralCode
+                ),
+                h('button', {
+                  onClick: () => {
+                    navigator.clipboard?.writeText(currentUser.referralCode);
+                    showToast('Referral code copied!');
+                  },
+                  className: 'px-4 rounded-xl bg-white text-black font-bold text-xs'
+                }, 'Copy')
+              ),
+              h('div', { className: 'grid grid-cols-2 gap-2 mt-3' },
+                h('div', { className: 'bg-[#0A0E14] rounded-xl p-2.5 border border-white/5 text-center' },
+                  h('div', { className: 'text-[11px] text-zinc-400' }, 'Invited'),
+                  h('div', { className: 'font-bold text-base' }, currentUser.referralCount)
+                ),
+                h('div', { className: 'bg-[#0A0E14] rounded-xl p-2.5 border border-white/5 text-center' },
+                  h('div', { className: 'text-[11px] text-zinc-400' }, 'Bonus Earned'),
+                  h('div', { className: 'font-bold text-base text-[#00C82A]' }, `₦${(currentUser.referralCount * 200).toLocaleString()}`)
+                )
+              )
+            ),
+
+            // Legal & Information Links
+            h('div', { className: 'grid grid-cols-2 gap-2' },
+              [
+                ['Terms of Service', 'Terms of Service: PIPOSCORES is for educational, statistical, and informational purposes. Predictions are probabilistic and carried out without profit guarantees.'],
+                ['Privacy Policy', 'Privacy Policy: Data is persisted to secure Google Firebase and local device storage. We do not sell user data.'],
+                ['18+ Disclaimer', 'Disclaimer: PIPOSCORES provides statistical match analysis and deterministic predictions for informational purposes only. We do not operate gambling facilities.'],
+                ['Terms & Conditions', 'Terms: Predictions are for educational and informational sports analysis. Users must be 18 years or older.']
+              ].map(([title]) => h('button', {
+                key: title,
+                onClick: () => setLegalModalTitle(title),
+                className: 'h-10 rounded-xl bg-[#151B25] border border-white/5 text-[11px] font-bold hover:bg-white/[0.04] transition-all'
+              }, title))
+            )
+          )
+        ),
+
+        // BOTTOM NAVIGATION BAR (Standard 5 tabs: Home, Picks, VIP, History, Profile. No admin.)
+        h('nav', { className: 'fixed bottom-0 left-0 right-0 z-20 bg-[#0A0E14]/95 backdrop-blur-xl border-t border-white/[0.06] px-2 py-1.5 flex justify-around' },
+          [
+            { k: 'home', label: 'Home', icon: '🏠' },
+            { k: 'picks', label: 'Picks', icon: '📋' },
+            { k: 'vip', label: 'VIP', icon: '👑' },
+            { k: 'history', label: 'History', icon: '🕒' },
+            { k: 'profile', label: 'Profile', icon: '👤' }
+          ].map((item) => h('button', {
+            key: item.k,
+            onClick: () => setActiveTab(item.k),
+            className: `flex flex-col items-center justify-center gap-0.5 px-3 py-1 rounded-xl ${activeTab === item.k ? 'text-[#00C82A] font-bold' : 'text-zinc-500'}`
+          },
+            h('span', { className: 'text-lg' }, item.icon),
+            h('span', { className: 'text-[10px]' }, item.label)
+          ))
+        ),
+
+        // TOAST NOTIFICATIONS
+        toastMsg && h('div', { className: 'fixed bottom-[90px] left-1/2 -translate-x-1/2 bg-white text-black px-4 py-2 rounded-full text-[12px] font-bold shadow-xl z-50' }, toastMsg),
+
+        // AUTH MODAL
+        showAuthModal && h('div', { className: 'fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4' },
+          h('div', { className: 'bg-[#151B25] rounded-2xl p-5 w-full max-w-sm border border-white/10' },
+            h('div', { className: 'flex justify-between items-center mb-4' },
+              h('h3', { className: 'font-bold text-base' }, authMode === 'signin' ? 'Sign In to PIPOSCORES' : 'Create an Account'),
+              h('button', { onClick: () => setShowAuthModal(false), className: 'w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs' }, '✕')
+            ),
+
+            domainError && h('div', { className: 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 p-3 rounded-xl text-[11px] mb-3' },
+              h('div', { className: 'font-bold mb-1' }, '⚠️ Firebase Domain Notice'),
+              domainError
+            ),
+
+            authError && h('div', { className: 'bg-red-500/10 border border-red-500/30 text-red-400 p-2.5 rounded-xl text-[12px] mb-3' },
+              authError
+            ),
+
+            h('form', { onSubmit: handleEmailAuth, className: 'space-y-3' },
+              h('input', {
+                type: 'email', value: authEmail, onChange: (e) => setAuthEmail(e.target.value),
+                placeholder: 'Email address',
+                className: 'w-full h-10 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[13px] text-white'
+              }),
+              h('input', {
+                type: 'password', value: authPassword, onChange: (e) => setAuthPassword(e.target.value),
+                placeholder: 'Password',
+                className: 'w-full h-10 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[13px] text-white'
+              }),
+              h('button', {
+                type: 'submit',
+                disabled: isAuthLoading,
+                className: 'w-full h-10 rounded-full bg-[#00C82A] text-black font-bold text-sm'
+              }, isAuthLoading ? 'Please wait...' : authMode === 'signin' ? 'Sign In' : 'Create Account')
+            ),
+
+            h('div', { className: 'text-center my-3 text-[11px] text-zinc-500' }, 'OR'),
+
+            h('div', { className: 'space-y-2' },
+              h('button', {
+                type: 'button',
+                onClick: handleGoogleLogin,
+                disabled: isAuthLoading,
+                className: 'w-full h-10 rounded-full bg-white text-black font-bold text-[12px]'
+              }, 'Sign In with Google'),
+              h('button', {
+                type: 'button',
+                onClick: handleDemoLogin,
+                className: 'w-full h-9 rounded-full bg-[#00C82A]/10 text-[#00C82A] border border-[#00C82A]/30 font-bold text-[12px]'
+              }, '⚡ Quick Demo Sign-In (1-Click)')
+            ),
+
+            h('div', { className: 'text-center mt-3' },
+              h('button', {
+                onClick: () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'),
+                className: 'text-[11px] text-zinc-400'
+              }, authMode === 'signin' ? 'No account? Create one' : 'Have an account? Sign in')
+            )
+          )
+        ),
+
+        // LEGAL MODAL
+        legalModalTitle && h('div', { className: 'fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4' },
+          h('div', { className: 'bg-[#151B25] rounded-2xl p-5 w-full max-w-sm border border-white/10' },
+            h('div', { className: 'flex justify-between items-center mb-3' },
+              h('h3', { className: 'font-bold' }, legalModalTitle),
+              h('button', { onClick: () => setLegalModalTitle(null), className: 'w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs' }, '✕')
+            ),
+            h('p', { className: 'text-[13px] text-zinc-300 leading-relaxed' },
+              legalModalTitle === 'Terms of Service' ? 'PIPOSCORES provides statistical match analysis and deterministic sports predictions. All predictions are generated algorithmically for informational and entertainment use.' :
+              legalModalTitle === 'Privacy Policy' ? 'All user information, subscriptions, and matches are stored directly in your Firebase Firestore cloud database and local device storage. We do not sell user data.' :
+              'PIPOSCORES provides sports analysis and deterministic predictions for informational purposes only. We do not accept wagers or operate gambling facilities. Users must be 18 years or older.'
+            )
+          )
+        ),
+
+        // BUY PLAN MODAL
+        buyingPlan && h('div', { className: 'fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4' },
+          h('div', { className: 'bg-[#151B25] rounded-2xl p-5 w-full max-w-sm border border-white/10' },
+            h('div', { className: 'flex justify-between items-center mb-3' },
+              h('h4', { className: 'font-bold' }, `Subscribe to ${buyingPlan.name} • ₦${buyingPlan.price.toLocaleString()}`),
+              h('button', { onClick: () => setBuyingPlan(null), className: 'w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-xs' }, '✕')
+            ),
+            h('div', { className: 'space-y-3' },
+              h('input', {
+                type: 'email', value: payForm.email, onChange: (e) => setPayForm({ ...payForm, email: e.target.value }),
+                placeholder: 'Account Email',
+                className: 'w-full h-10 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[13px] text-white'
+              }),
+              h('input', {
+                type: 'tel', value: payForm.phone, onChange: (e) => setPayForm({ ...payForm, phone: e.target.value }),
+                placeholder: 'Phone (Optional)',
+                className: 'w-full h-10 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[13px] text-white'
+              }),
+              h('input', {
+                type: 'text', value: payForm.referral, onChange: (e) => setPayForm({ ...payForm, referral: e.target.value }),
+                placeholder: 'Referral Code (Optional)',
+                className: 'w-full h-10 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[13px] text-white'
+              }),
+              isProcessingPay ? h('div', { className: 'h-11 rounded-full bg-[#00C82A]/20 text-[#00C82A] font-bold text-[12px] flex items-center justify-center' }, 'Saving to Firestore vip_subs...') :
+                h('button', {
+                  onClick: handleConfirmPurchase,
+                  className: 'w-full h-11 rounded-full bg-[#00C82A] text-black font-bold text-sm'
+                }, `Pay ₦${buyingPlan.price.toLocaleString()} Now`)
+            )
+          )
+        ),
+
+        // SECRET URL ADMIN GATE (id="adminGate")
+        // Appears ONLY when URL has ?admin=true or #admin=true. Otherwise display:none and never loads for normal users.
+        h('div', {
+          id: 'adminGate',
+          style: { display: isAdminUrl ? 'block' : 'none' },
+          className: 'fixed inset-0 z-[100] bg-[#0A0E14] overflow-auto text-white'
+        },
+          isAdminUrl && (
+            !isAdminUnlocked ? h('div', { id: 'adminPinCard', className: 'min-h-screen flex items-center justify-center p-6' },
+              h('div', { className: 'bg-[#151B25] rounded-2xl p-6 w-full max-w-sm border border-white/10 text-center shadow-[0_10px_40px_rgba(0,0,0,0.8)]' },
+                h('div', { className: 'w-12 h-12 rounded-full bg-[#00C82A]/10 text-[#00C82A] mx-auto flex items-center justify-center text-xl mb-3 border border-[#00C82A]/30' }, '🔒'),
+                h('h2', { className: 'font-extrabold text-[20px] mb-1' }, 'Admin Gate'),
+                h('p', { className: 'text-[12px] text-zinc-400 mb-4' }, 'Enter PIN to access Firestore administration'),
+                h('input', {
+                  id: 'adminPinInput',
+                  type: 'password',
+                  value: adminPin,
+                  onChange: (e) => { setAdminPin(e.target.value); setAdminPinError(false); },
+                  onKeyDown: (e) => { if (e.key === 'Enter') handleAdminLogin(); },
+                  placeholder: 'PIN',
+                  className: 'w-full h-11 rounded-xl bg-[#0A0E14] border border-white/10 px-3 text-[14px] mb-3 text-center tracking-widest text-white focus:border-[#00C82A] focus:outline-none'
+                }),
+                h('button', {
+                  id: 'adminLoginBtn',
+                  onClick: handleAdminLogin,
+                  className: 'w-full h-11 rounded-full bg-[#00C82A] text-black font-bold text-sm hover:bg-[#00D12C] transition-all'
+                }, 'Login'),
+                adminPinError && h('p', { id: 'adminPinError', className: 'text-red-400 text-xs mt-2 font-medium' }, 'Incorrect PIN. Access Denied.'),
+                h('button', {
+                  onClick: handleExitAdmin,
+                  className: 'w-full h-10 mt-3 rounded-full bg-white/5 text-zinc-400 font-medium text-[12px] hover:bg-white/10'
+                }, '← Exit to App')
+              )
+            ) : h('div', { id: 'adminFullPanel', className: 'min-h-screen' },
+              h('div', { className: 'sticky top-0 z-10 bg-[#0A0E14] border-b border-white/10 px-4 py-3 flex justify-between items-center' },
+                h('button', { onClick: handleExitAdmin, className: 'h-9 px-3 rounded-full bg-white text-black font-bold text-[12px] hover:bg-zinc-200' }, '← Exit Admin'),
+                h('span', { className: 'font-bold text-[13px] text-[#00C82A]' }, 'ADMIN • DIRECT FIRESTORE WRITER'),
+                h('button', { onClick: () => { setIsAdminUnlocked(false); setAdminPin(''); }, className: 'text-[11px] px-2.5 py-1 rounded-full bg-white/10 text-zinc-300 hover:text-white' }, 'Lock')
+              ),
+
+              h('div', { className: 'flex gap-2 overflow-x-auto px-4 py-3 border-b border-white/5 sticky top-[52px] bg-[#0A0E14] z-10' },
+                ['results', 'plans', 'payments', 'users'].map((t) => h('button', {
+                  key: t, onClick: () => setAdminTab(t),
+                  className: `px-3 py-1.5 rounded-full text-[11px] font-bold uppercase whitespace-nowrap border ${adminTab === t ? 'bg-[#00C82A] text-black border-[#00C82A]' : 'bg-[#151B25] text-zinc-400 border-white/10'}`
+                }, t))
+              ),
+
+              h('div', { className: 'p-4 max-w-[900px] mx-auto' },
+                // ADMIN RESULTS
+                adminTab === 'results' && h('div', { className: 'space-y-4' },
+                  h('div', { className: 'bg-[#151B25] rounded-xl p-3 border border-[#00C82A]/30 text-[12px] text-zinc-300' },
+                    h('b', { className: 'text-[#00C82A]' }, 'Direct Firestore Writer: '),
+                    `Clicking "Set Score" immediately updates Firestore matches/${todayStr}. All clients reflect updates live.`
+                  ),
+                  h('div', { className: 'grid gap-3' },
+                    matches.map((m) => h('div', { key: m.id, className: 'bg-[#151B25] rounded-xl p-3 border border-white/5' },
+                      h('div', { className: 'flex justify-between items-center mb-2' },
+                        h('span', { className: 'font-bold text-[12px]' }, `${m.home} vs ${m.away} • ${m.league} • ${m.time}`),
+                        h('span', { className: `text-[10px] px-2 py-0.5 rounded-full font-bold ${m.result === 'won' ? 'bg-green-500/20 text-green-400' : m.result === 'lost' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}` }, m.status.toUpperCase())
+                      ),
+                      h('div', { className: 'flex items-center gap-2 mb-2 text-[11px] text-zinc-400' },
+                        h('span', { className: 'px-2 py-0.5 rounded bg-white/10 text-white' }, `${m.market} @ ${m.odds}`),
+                        m.finalScore && h('span', { className: 'font-bold text-white' }, `FT: ${m.finalScore}`)
+                      ),
+                      h('div', { className: 'flex items-center gap-2' },
+                        h('span', { className: 'text-[10px] text-zinc-400' }, 'HOME'),
+                        h('input', {
+                          type: 'number',
+                          value: scoreInputs[m.id]?.h ?? '',
+                          onChange: (e) => setScoreInputs({ ...scoreInputs, [m.id]: { h: e.target.value, a: scoreInputs[m.id]?.a || '' } }),
+                          placeholder: '--',
+                          className: 'w-14 h-9 rounded-lg bg-[#0A0E14] border-2 border-[#00C82A] text-center font-bold text-white'
+                        }),
+                        h('span', { className: 'font-bold text-zinc-500' }, ':'),
+                        h('input', {
+                          type: 'number',
+                          value: scoreInputs[m.id]?.a ?? '',
+                          onChange: (e) => setScoreInputs({ ...scoreInputs, [m.id]: { h: scoreInputs[m.id]?.h || '', a: e.target.value } }),
+                          placeholder: '--',
+                          className: 'w-14 h-9 rounded-lg bg-[#0A0E14] border-2 border-[#00C82A] text-center font-bold text-white'
+                        }),
+                        h('span', { className: 'text-[10px] text-zinc-400' }, 'AWAY'),
+                        h('button', {
+                          onClick: () => handleAdminSetScore(m.id),
+                          className: 'h-9 px-3 rounded-full bg-[#00C82A] text-black font-bold text-[11px]'
+                        }, 'Set Score')
+                      )
+                    ))
+                  )
+                ),
+
+                // ADMIN PLANS
+                adminTab === 'plans' && h('div', { className: 'space-y-4' },
+                  h('div', { className: 'flex justify-between items-center' },
+                    h('h3', { className: 'font-bold' }, 'Plans (Firestore collection: plans)'),
+                    h('button', {
+                      onClick: async () => {
+                        const name = prompt('Plan Name:') || 'New Plan';
+                        const price = parseInt(prompt('Price ₦:') || '1000', 10);
+                        const duration = parseInt(prompt('Days:') || '7', 10);
+                        const p = { id: `plan-${Date.now()}`, name, price, duration, benefits: 'VIP access', active: true };
+                        await setDoc(doc(db, 'plans', p.id), p);
+                        showToast('Plan added to Firestore');
+                      },
+                      className: 'h-9 px-3 rounded-full bg-[#00C82A] text-black font-bold text-[12px]'
+                    }, '+ Add Plan')
+                  ),
+                  h('div', { className: 'bg-[#151B25] rounded-xl border border-white/5 overflow-auto' },
+                    h('table', { className: 'w-full text-[12px]' },
+                      h('thead', { className: 'text-zinc-500 border-b border-white/5' },
+                        h('tr', null,
+                          h('th', { className: 'p-2 text-left' }, 'Name'),
+                          h('th', { className: 'p-2 text-left' }, 'Price'),
+                          h('th', { className: 'p-2 text-left' }, 'Days'),
+                          h('th', { className: 'p-2 text-left' }, 'Active'),
+                          h('th', { className: 'p-2 text-left' }, 'Action')
+                        )
+                      ),
+                      h('tbody', null,
+                        plans.map((p) => h('tr', { key: p.id, className: 'border-b border-white/5' },
+                          h('td', { className: 'p-2 font-bold' }, p.name),
+                          h('td', { className: 'p-2' }, `₦${p.price.toLocaleString()}`),
+                          h('td', { className: 'p-2' }, `${p.duration}d`),
+                          h('td', { className: 'p-2' },
+                            h('button', {
+                              onClick: async () => {
+                                await updateDoc(doc(db, 'plans', p.id), { active: !p.active });
+                                showToast(`Plan ${p.name} updated!`);
+                              },
+                              className: `px-2 py-1 rounded text-[10px] font-bold ${p.active ? 'bg-[#00C82A] text-black' : 'bg-zinc-700 text-white'}`
+                            }, p.active ? 'ACTIVE' : 'OFF')
+                          ),
+                          h('td', { className: 'p-2' },
+                            h('button', {
+                              onClick: async () => {
+                                if (confirm('Delete?')) {
+                                  await deleteDoc(doc(db, 'plans', p.id));
+                                  showToast('Plan deleted from Firestore');
+                                }
+                              },
+                              className: 'px-2 py-1 rounded bg-red-500/20 text-red-400 text-[10px]'
+                            }, 'Delete')
+                          )
+                        ))
+                      )
+                    )
+                  )
+                ),
+
+                // ADMIN PAYMENTS
+                adminTab === 'payments' && h('div', { className: 'space-y-4' },
+                  h('h3', { className: 'font-bold' }, 'Payment Config (Firestore payment_config/global)'),
+                  ['paystack', 'flutterwave', 'bank', 'whatsapp'].map((gate) => h('div', {
+                    key: gate, className: 'bg-[#151B25] rounded-xl p-4 border border-white/5 space-y-2'
+                  },
+                    h('div', { className: 'flex justify-between items-center' },
+                      h('h4', { className: 'font-bold uppercase text-[13px]' }, gate),
+                      h('label', { className: 'text-[12px] flex items-center gap-1' },
+                        h('input', {
+                          type: 'checkbox',
+                          checked: Boolean(paymentConfig[gate]?.active),
+                          onChange: (e) => setPaymentConfig({
+                            ...paymentConfig,
+                            [gate]: { ...paymentConfig[gate], active: e.target.checked }
+                          })
+                        }),
+                        'Active'
+                      )
+                    )
+                  )),
+                  h('button', {
+                    onClick: async () => {
+                      await setDoc(doc(db, 'payment_config', 'global'), paymentConfig);
+                      showToast('Payment config saved to Firestore!');
+                    },
+                    className: 'w-full h-11 rounded-full bg-[#00C82A] text-black font-bold'
+                  }, 'Save Payment Config')
+                ),
+
+                // ADMIN USERS
+                adminTab === 'users' && h('div', { className: 'space-y-3' },
+                  h('h3', { className: 'font-bold' }, `Registered Users (${allUsers.length})`),
+                  h('div', { className: 'bg-[#151B25] rounded-xl border border-white/5 overflow-auto max-h-[50vh]' },
+                    h('table', { className: 'w-full text-[11px]' },
+                      h('thead', { className: 'text-zinc-500 border-b border-white/5' },
+                        h('tr', null,
+                          h('th', { className: 'p-2 text-left' }, 'User'),
+                          h('th', { className: 'p-2 text-left' }, 'Referral'),
+                          h('th', { className: 'p-2 text-left' }, 'Paid'),
+                          h('th', { className: 'p-2 text-left' }, 'VIP Expiry')
+                        )
+                      ),
+                      h('tbody', null,
+                        allUsers.map((u) => h('tr', { key: u.id, className: 'border-b border-white/5' },
+                          h('td', { className: 'p-2' }, u.name, h('div', { className: 'text-[10px] text-zinc-500' }, u.email)),
+                          h('td', { className: 'p-2 font-mono' }, u.referralCode),
+                          h('td', { className: 'p-2' }, `₦${(u.totalPaid || 0).toLocaleString()}`),
+                          h('td', { className: 'p-2' }, u.expiry ? new Date(u.expiry).toLocaleDateString() : 'None')
+                        ))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      );
+    }
+
+    // MATCH ROW SUBCOMPONENT
+    function MatchRow({ m }) {
+      return h('div', { className: 'bg-[#151B25] rounded-xl p-3 border border-white/5' },
+        h('div', { className: 'flex justify-between items-center mb-2' },
+          h('span', { className: 'text-[10px] text-zinc-400 uppercase tracking-wider' }, `${m.league} • ${m.time}`),
+          h(StatusBadge, { status: m.status, result: m.result, liveMinute: m.liveMinute })
+        ),
+        h('div', { className: 'flex justify-between items-start gap-2' },
+          h('div', null,
+            h('div', { className: 'text-white font-bold text-sm leading-tight' }, `${m.home} vs ${m.away}`),
+            h('div', { className: 'flex items-center gap-1 mt-1.5' },
+              h(FormBadge, { form: m.formHome }),
+              h('span', { className: 'text-[10px] text-zinc-500' }, 'vs'),
+              h(FormBadge, { form: m.formAway }),
+              m.injury && h('span', { className: 'text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded' }, `-${m.injury.impact}% ${m.injury.player}`)
+            ),
+            h('div', { className: 'mt-1.5 text-[11px] text-zinc-400' }, `${m.h2h} • "${m.why.slice(0, 50)}"`)
+          ),
+          h('div', { className: 'text-right shrink-0' },
+            h('div', { className: 'flex items-center gap-1 justify-end' },
+              h('span', { className: 'text-[10px] px-2 py-0.5 rounded-full bg-[#00C82A]/15 text-[#00C82A] font-bold' }, m.market),
+              h('span', { className: 'text-xs font-bold text-white bg-white/10 px-1.5 py-0.5 rounded' }, m.odds.toFixed(2))
+            ),
+            h('div', { className: 'text-[10px] text-zinc-400 mt-1' }, `${m.confidence}% conf`),
+            m.finalScore && h('div', { className: 'text-xs font-bold text-white mt-1' }, `FT ${m.finalScore}`)
+          )
+        )
+      );
+    }
+
+    // TICKET CARD SUBCOMPONENT
+    function TicketCard({ title, badge, combo, onCopy, onShare }) {
+      return h('div', { className: 'bg-[#151B25] rounded-[18px] p-4 border border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.4)]' },
+        h('div', { className: 'flex justify-between items-center mb-3' },
+          h('div', { className: 'flex items-center gap-2' },
+            h('span', { className: 'w-7 h-7 rounded-full bg-[#00C82A] flex items-center justify-center text-black font-black text-xs' }, '⚽'),
+            h('span', { className: 'text-white font-bold text-sm' }, title),
+            badge && h('span', { className: 'text-[10px] px-2 py-0.5 rounded-full bg-[#00C82A] text-black font-bold' }, badge)
+          ),
+          h('div', { className: 'text-[11px] text-zinc-400' }, 'Total Odds: ', h('span', { className: 'text-white font-bold text-[14px]' }, combo.total.toFixed(2)))
+        ),
+        h('div', { className: 'space-y-2.5' },
+          combo.legs.map((m) => h(MatchRow, { key: m.id, m }))
+        ),
+        h('div', { className: 'flex gap-2 mt-4' },
+          h('button', {
+            onClick: onCopy,
+            className: 'flex-1 h-10 rounded-full bg-white text-black font-bold text-sm'
+          }, 'Copy Ticket'),
+          h('button', {
+            onClick: onShare,
+            className: 'flex-1 h-10 rounded-full bg-[#00C82A] text-black font-bold text-sm'
+          }, 'Share')
+        )
+      );
+    }
+
+    function StatusBadge({ status, result, liveMinute }) {
+      if (status === 'finished') {
+        return h('span', {
+          className: `text-[10px] px-2 py-0.5 rounded-full font-bold ${result === 'won' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`
+        }, result === 'won' ? 'WON' : 'LOST');
+      }
+      if (status === 'live') {
+        return h('span', { className: 'text-[10px] px-2 py-0.5 rounded-full bg-red-500 text-white font-bold animate-pulse' }, `LIVE ${liveMinute || ''}`);
+      }
+      return h('span', { className: 'text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-bold' }, 'PENDING');
+    }
+
+    function FormBadge({ form }) {
+      return h('div', { className: 'flex gap-[2px]' },
+        form.map((f, i) => h('span', {
+          key: i,
+          className: `w-3 h-3 rounded-full flex items-center justify-center text-[8px] font-bold ${f === 'W' ? 'bg-[#00C82A] text-black' : f === 'D' ? 'bg-zinc-600 text-white' : 'bg-red-500 text-white'}`
+        }, f))
+      );
+    }
+
+    // Mount to #root
+    window.ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+  </script>
+
+  <!-- SECRET URL ADMIN SCRIPT (Capacitor search & hash fallback) -->
+  <script>
+    (function () {
+      function checkAdminQuery() {
+        var search = window.location.search || '';
+        var hash = window.location.hash || '';
+        return search.indexOf('admin=true') !== -1 || hash.indexOf('admin=true') !== -1;
+      }
+
+      function syncAdminGate() {
+        var gate = document.getElementById('adminGate');
+        if (!gate) return;
+        if (checkAdminQuery()) {
+          gate.style.display = 'block';
+        } else {
+          gate.style.display = 'none';
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', syncAdminGate);
+      window.addEventListener('load', syncAdminGate);
+      window.addEventListener('hashchange', syncAdminGate);
+      window.addEventListener('popstate', syncAdminGate);
+    })();
+  </script>
+</body>
+</html>
